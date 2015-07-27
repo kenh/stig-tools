@@ -1,0 +1,75 @@
+#!/usr/bin/perl
+#
+# Simple tool for manipulating STIG checklists
+#
+
+use XML::Simple;
+use Data::Dumper;
+
+if ($#ARGV < 0) {
+	usage();
+}
+
+if ($ARGV[0] eq 'check') {
+	$check = 1;
+} elsif ($ARGV[0] eq 'import') {
+	$import = 1;
+} else {
+	usage();
+}
+
+if ($check || $import) {
+	if ($#ARGV != 2) {
+		usage();
+	}
+	$oldcheck = XMLin($ARGV[1]);
+	$newcheck = XMLin($ARGV[2]);
+}
+
+foreach $rule (@{$oldcheck->{'VULN'}}) {
+	my $rulever = find_rulever($rule);
+	my @newrule = grep(find_rulever($_) eq $rulever,
+			   @{$newcheck->{'VULN'}});
+
+	if ($#newrule < 0) {
+		print "Rule $rulever removed from newer STIG\n";
+	}
+
+	die "newrule elements was $#newrule, when it should be 0 or -1\n"
+		if $#newrule > 0;
+}
+
+foreach $rule (@{$newcheck->{'VULN'}}) {
+	my $rulever = find_rulever($rule);
+	my @oldrule = grep(find_rulever($_) eq $rulever,
+			   @{$oldcheck->{'VULN'}});
+
+	if ($#oldrule < 0) {
+		print "Rule $rulever added to newer STIG\n";
+	}
+
+	die "oldrule elements was $#oldrule, when it should be 0 or -1\n"
+		if $#oldrule > 0;
+}
+
+exit 0;
+
+sub find_rulever {
+	my $vuln = shift(@_);
+
+	my @attr = grep($_->{'VULN_ATTRIBUTE'} eq 'Rule_Ver',
+			@{$vuln->{'STIG_DATA'}});
+
+	die "Internal error: attributes matching Rule_ver was $#attr\n"
+				if ($#attr != 0);
+
+	return $attr[0]->{'ATTRIBUTE_DATA'};
+}
+
+sub usage {
+	print <<"EOF";
+Usage:	$0 check old-checklist new-checklist
+	$0 import old-checklist new-checklist
+EOF
+	exit 1;
+}

@@ -18,12 +18,13 @@ if ($ARGV[0] eq 'check') {
 	usage();
 }
 
+if (($check && $#ARGV != 2) || ($import && $#ARGV != 3)) {
+	usage();
+}
+
 if ($check || $import) {
-	if ($#ARGV != 2) {
-		usage();
-	}
-	$oldcheck = XMLin($ARGV[1]);
-	$newcheck = XMLin($ARGV[2]);
+	$oldcheck = XMLin($ARGV[1], ForceArray => 1);
+	$newcheck = XMLin($ARGV[2], ForceArray => 1);
 }
 
 foreach $rule (@{$oldcheck->{'VULN'}}) {
@@ -39,6 +40,9 @@ foreach $rule (@{$oldcheck->{'VULN'}}) {
 	} else {
 		if (! comprule($rule, $newrule[0])) {
 			print "Rule $rulever changed in newer STIG\n";
+			copyrule($rule, $newrule[0], 0) if $import;
+		} else {
+			copyrule($rule, $newrule[0], 1) if $import;
 		}
 	}
 }
@@ -56,41 +60,45 @@ foreach $rule (@{$newcheck->{'VULN'}}) {
 		if $#oldrule > 0;
 }
 
+XMLout($newcheck, RootName => 'CHECKLIST',
+       XMLDecl => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+       OutputFile => $ARGV[3]) if $import;
+
 exit 0;
 
 sub find_rulever {
 	my $vuln = shift(@_);
 
-	my @attr = grep($_->{'VULN_ATTRIBUTE'} eq 'Rule_Ver',
+	my @attr = grep($_->{'VULN_ATTRIBUTE'}[0] eq 'Rule_Ver',
 			@{$vuln->{'STIG_DATA'}});
 
 	die "Internal error: attributes matching Rule_ver was $#attr\n"
 				if ($#attr != 0);
 
-	return $attr[0]->{'ATTRIBUTE_DATA'};
+	return $attr[0]->{'ATTRIBUTE_DATA'}[0];
 }
 
 sub usage {
 	print <<"EOF";
 Usage:	$0 check old-checklist new-checklist
-	$0 import old-checklist new-checklist
+	$0 import old-checklist new-checklist output-checklist
 EOF
 	exit 1;
 }
 
 sub comprule {
 	my ($oldrule, $newrule) = @_;
-	my @olddata = sort {$a->{'VULN_ATTRIBUTE'} cmp $b->{'VULN_ATTRIBUTE'}}
+	my @olddata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
 				@{$oldrule->{'STIG_DATA'}};
-	my @newdata = sort {$a->{'VULN_ATTRIBUTE'} cmp $b->{'VULN_ATTRIBUTE'}}
+	my @newdata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
 				@{$newrule->{'STIG_DATA'}};
 	my $oldattr, $newattr, $datatype;
 
 	while ($oldattr = shift @olddata, $newattr = shift @newdata) {
-		my $oldattrname = $oldattr->{'VULN_ATTRIBUTE'};
-		my $newattrname = $newattr->{'VULN_ATTRIBUTE'};
-		my $oldattrdata = $oldattr->{'ATTRIBUTE_DATA'};
-		my $newattrdata = $newattr->{'ATTRIBUTE_DATA'};
+		my $oldattrname = $oldattr->{'VULN_ATTRIBUTE'}[0];
+		my $newattrname = $newattr->{'VULN_ATTRIBUTE'}[0];
+		my $oldattrdata = $oldattr->{'ATTRIBUTE_DATA'}[0];
+		my $newattrdata = $newattr->{'ATTRIBUTE_DATA'}[0];
 		if ($oldattrname ne $newattrname) {
 			print "Attributes do not match! $oldattrname vs ",
 				"$newattrname\n";
@@ -131,4 +139,11 @@ sub comprule {
 	}
 
 	return 1;
+}
+
+sub copyrule {
+	my ($oldrule, $newrule, $copystatus) = @_;
+
+	$newrule->{'FINDING_DETAILS'} = $oldrule->{'FINDING_DETAILS'};
+	$newrule->{'STATUS'} = $oldrule->{'STATUS'} if $copystatus;
 }

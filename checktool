@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id$
+# $Id: checktool,v 1.4 2015/07/31 04:59:29 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -84,7 +84,7 @@ foreach $rule (@{$newcheck->{'VULN'}}) {
 if ($import) {
 	my $asset = $oldcheck->{'ASSET'}[0];
 
-	foreach $key (keys $asset) {
+	foreach $key (keys %{$asset}) {
 		next if $key eq 'ASSET_VAL';
 		$newcheck->{'ASSET'}[0]->{$key} = $asset->{$key};
 	}

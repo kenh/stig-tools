@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.4 2015/07/31 04:59:29 kenh Exp kenh $
+# $Id: checktool,v 1.5 2015/07/31 05:08:06 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -41,10 +41,10 @@ if ($dump) {
 	exit 0;
 }
 
-foreach $rule (@{$oldcheck->{'VULN'}}) {
+foreach $rule (@{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
 	my $rulever = find_rulever($rule);
 	my @newrule = grep(find_rulever($_) eq $rulever,
-			   @{$newcheck->{'VULN'}});
+			   @{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
 
 	die "newrule elements was $#newrule, when it should be 0 or -1\n"
 		if $#newrule > 0;
@@ -64,10 +64,10 @@ foreach $rule (@{$oldcheck->{'VULN'}}) {
 	}
 }
 
-foreach $rule (@{$newcheck->{'VULN'}}) {
+foreach $rule (@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
 	my $rulever = find_rulever($rule);
 	my @oldrule = grep(find_rulever($_) eq $rulever,
-			   @{$oldcheck->{'VULN'}});
+			   @{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
 
 	if ($#oldrule < 0) {
 		print "Rule $rulever added to newer STIG\n";

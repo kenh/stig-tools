@@ -1,9 +1,31 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.5 2015/07/31 05:08:06 kenh Exp kenh $
+# $Id: checktool,v 1.6 2016/03/31 15:48:10 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
+# This tool can be used for manipulating checklists produced by the
+# STIG tool.  The basic idea is that once you fill in a checklist with the
+# appropriate entries, you can use this tool to migrate all of your filled-in
+# data to a new version of the checklist.
+#
+# There are three subcommands: "dump", "check", and "import".
+#
+# "dump" outputs the checklist XML structure using the Data::Dumper module.
+# It is intended only to be used by people who have to debug or alter
+# this tool.
+#
+# "check" is given an existing checklist and a new checklist generated from
+# a new STIG release.  It will tell you what it thinks needs to change
+# (rules added or removed, rules that have been changed).
+#
+# "import" will do everything that "check" does, except then copy over
+# everything it can from the existing checklist to a new checklist specified
+# on the command line.  If the rules are identical it will also copy over
+# the "Status" (e.g. "Not a Finding"); the idea here is that if everything
+# is the same there's no need to review it, but if things have changed
+# a human should rewview the changes to make sure nothing needs to be changed
+# in the response.
 #
 
 use XML::Simple;

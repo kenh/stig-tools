@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.6 2016/03/31 15:48:10 kenh Exp kenh $
+# $Id: checktool,v 1.7 2016/03/31 16:08:33 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -160,17 +160,22 @@ sub comprule {
 		}
 
 		if ($oldattrdata ne $newattrdata) {
-			print "Data for attribute $oldattrname does not ",
-				"match\n";
-			print "old: \"$oldattrdata\"\n";
-			print "new: \"$newattrdata\"\n";
+			if ($oldattrname eq 'STIGRef') {
+				print "Attr $oldattrname has changed, but ",
+					"we are ignoring it\n";
+			} else {
+				print "Data for attribute $oldattrname does ",
+					"not match\n";
+				print "old: \"$oldattrdata\"\n";
+				print "new: \"$newattrdata\"\n";
 #			my $mask = $oldattrdata ^ $newattrdata;
 #			while ($mask =~ /[^\0]/g) {
 #				print substr($oldattrname, $-[0], 1), ' ',
 #					substr($newattrname, $-[0], 1), ' ',
 #					$-[0], "\n";
 #			}
-			return 0;
+				return 0;
+			}
 		}
 	}
 

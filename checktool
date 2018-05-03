@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.8 2016/03/31 16:43:27 kenh Exp kenh $
+# $Id: checktool,v 1.9 2018/04/30 18:46:38 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -112,6 +112,22 @@ if ($import) {
 	foreach $key (keys %{$asset}) {
 		next if $key eq 'ASSET_VAL';
 		$newcheck->{'ASSET'}[0]->{$key} = $asset->{$key};
+	}
+
+	#
+	# For reasons I do not understand, with the latest version of the
+	# STIG viewer it sometimes fails to parse the checklist it unless
+	# the UUID is removed (it will generate a new one when it is saved).
+	#
+
+	my $index = 0;
+	my $siarray = \@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'STIG_INFO'}[0]->{'SI_DATA'}};
+	foreach $info (@$siarray) {
+		if ($info->{'SID_NAME'}[0] eq 'uuid') {
+			splice(@$siarray, $index, 1);
+			last;
+		}
+		$index++;
 	}
 
 	XMLout($newcheck, RootName => 'CHECKLIST',

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.9 2018/04/30 18:46:38 kenh Exp kenh $
+# $Id: checktool,v 1.10 2018/05/03 18:22:12 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -11,9 +11,9 @@
 #
 # There are three subcommands: "dump", "check", and "import".
 #
-# "dump" outputs the checklist XML structure using the Data::Dumper module.
-# It is intended only to be used by people who have to debug or alter
-# this tool.
+# "dump" outputs the matches for the given XPath expression given the
+# input checklist.  It is intended only to be used by people who have to
+# debug or alter this tool.
 #
 # "check" is given an existing checklist and a new checklist generated from
 # a new STIG release.  It will tell you what it thinks needs to change
@@ -25,14 +25,20 @@
 # the "Status" (e.g. "Not a Finding"); the idea here is that if everything
 # is the same there's no need to review it, but if things have changed
 # a human should rewview the changes to make sure nothing needs to be changed
-# in the response.
+# in the response.  'import' can also take the name of the YAML file which
+# contains finding details to be placed in the output file for specific
+# vulnerabilities.
 #
 # Erci Stern: 4/30/2018 - added test to comprule for Check_Content_Ref
 #                         attribute
 #
 
-use XML::Simple;
-use Data::Dumper;
+
+use XML::LibXML;
+
+# A list of elements we ignore for rule comparisons
+
+@ignoreattr = ('STIGRef', 'Check_Content_Ref', 'Weight');
 
 if ($#ARGV < 0) {
 	usage();
@@ -49,167 +55,408 @@ if ($ARGV[0] eq 'check') {
 }
 
 if (($check && $#ARGV != 2) || ($import && $#ARGV != 3) ||
-    ($dump && $#ARGV != 1)) {
+    ($dump && $#ARGV != 2)) {
 	usage();
 }
 
 if ($check || $import || $dump) {
-	$oldcheck = XMLin($ARGV[1], ForceArray => 1, SuppressEmpty => '');
+	$oldcheck = XML::LibXML->load_xml(location => $ARGV[1]);
 	if ($check || $import) {
-		$newcheck = XMLin($ARGV[2], ForceArray => 1,
-				  SuppressEmpty => '');
+		$newcheck = XML::LibXML->load_xml(location => $ARGV[2]);
 	}
 }
 
+#
+# "dump" is designed to handle an XPath expression.  It should only
+# be used for testing and development
+#
+
 if ($dump) {
-	print Dumper($oldcheck);
+	my @nodes = $oldcheck->findnodes($ARGV[2]);
+	print "For expression \"$ARGV[2]\", there were ", scalar(@nodes),
+	      " matches\n";
+	foreach my $elem (@nodes) {
+		print "Node: ", ref($elem), ", name = ", $elem->nodeName,
+		      ", path = ", $elem->nodePath(), ", value = ",
+		      $elem->nodeValue(), "\n";
+	}
 	exit 0;
 }
 
-foreach $rule (@{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
-	my $rulever = find_rulever($rule);
-	my @newrule = grep(find_rulever($_) eq $rulever,
-			   @{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
+$oldvuls = getvuls($oldcheck, $ARGV[1]);
+$newvuls = getvuls($newcheck, $ARGV[2]);
 
-	die "newrule elements was $#newrule, when it should be 0 or -1\n"
-		if $#newrule > 0;
+#
+# Report which vulnerabilities have been removed from old to new, and
+# which ones have been added
+#
 
-	if ($#newrule < 0) {
-		print "Rule $rulever removed from newer STIG\n";
+foreach my $vul (sort(keys $oldvuls)) {
+	if (! exists $newvuls->{$vul}) {
+		print "Vulnerability $vul removed from new checklist\n";
 	} else {
-		if (! comprule($rule, $newrule[0])) {
-			print "Rule $rulever changed in newer STIG\n";
-			copyrule($rule, $newrule[0], 0) if $import;
-		} elsif ($rule->{'FINDING_DETAILS'}[0] eq '') {
-			print "Rule $rulever missing Finding Details\n";
-			copyrule($rule, $newrule[0], 0) if $import;
-		} else {
-			copyrule($rule, $newrule[0], 1) if $import;
-		}
+		push @xfervuls, $vul;
 	}
 }
 
-foreach $rule (@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
-	my $rulever = find_rulever($rule);
-	my @oldrule = grep(find_rulever($_) eq $rulever,
-			   @{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
-
-	if ($#oldrule < 0) {
-		print "Rule $rulever added to newer STIG\n";
+foreach my $vul (sort(keys $newvuls)) {
+	if (! exists $oldvuls->{$vul}) {
+		print "Vulnerability $vul added in new checklist\n";
 	}
-
-	die "oldrule elements was $#oldrule, when it should be 0 or -1\n"
-		if $#oldrule > 0;
 }
 
 #
-# Make sure we copy over asset data
-#
+# The array @xfervuls contains the intersection of vulnerabilities between
+# the old and new checklist.  Cycle through each one and compare the
+# vulerabilities.  We always copy over the FINDING_DETAILS; if the rule
+# "matches" (for some definition of "match"), then we set the status
+# to the value of the original rule status.  Otherwise set the status
+# to "Open"
+# 
+
+foreach my $vul (@xfervuls) {
+
+	# We're printing out the exact difference in comprule now
+
+	if ($import) {
+		copyrule($oldvuls->{$vul}, $newvuls->{$vul}, $vul,
+			 comprule($oldvuls->{$vul}, $newvuls->{$vul}, $vul));
+	} else {
+		comprule($oldvuls->{$vul}, $newvuls->{$vul}, $vul);
+	}
+}
 
 if ($import) {
-	my $asset = $oldcheck->{'ASSET'}[0];
-
-	foreach $key (keys %{$asset}) {
-		next if $key eq 'ASSET_VAL';
-		$newcheck->{'ASSET'}[0]->{$key} = $asset->{$key};
-	}
-
-	#
-	# For reasons I do not understand, with the latest version of the
-	# STIG viewer it sometimes fails to parse the checklist it unless
-	# the UUID is removed (it will generate a new one when it is saved).
-	#
-
-	my $index = 0;
-	my $siarray = \@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'STIG_INFO'}[0]->{'SI_DATA'}};
-	foreach $info (@$siarray) {
-		if ($info->{'SID_NAME'}[0] eq 'uuid') {
-			splice(@$siarray, $index, 1);
-			last;
-		}
-		$index++;
-	}
-
-	XMLout($newcheck, RootName => 'CHECKLIST',
-	       XMLDecl =>
-		     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-	       OutputFile => $ARGV[3]);
+	$newcheck->toFile($ARGV[3], 0);
 }
 
 exit 0;
 
-sub find_rulever {
-	my $vuln = shift(@_);
-
-	my @attr = grep($_->{'VULN_ATTRIBUTE'}[0] eq 'Rule_Ver',
-			@{$vuln->{'STIG_DATA'}});
-
-	die "Internal error: attributes matching Rule_ver was $#attr\n"
-				if ($#attr != 0);
-
-	return $attr[0]->{'ATTRIBUTE_DATA'}[0];
-}
-
-sub usage {
-	print <<"EOF";
-Usage:	$0 check old-checklist new-checklist
-	$0 import old-checklist new-checklist output-checklist
-	$0 dump checklist
-EOF
-	exit 1;
-}
-
 sub comprule {
-	my ($oldrule, $newrule) = @_;
-	my @olddata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
-				@{$oldrule->{'STIG_DATA'}};
-	my @newdata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
-				@{$newrule->{'STIG_DATA'}};
-	my $oldattr, $newattr, $datatype;
+	my ($oldrule, $newrule, $vulname) = @_;
 
-	while ($oldattr = shift @olddata, $newattr = shift @newdata) {
-		my $oldattrname = $oldattr->{'VULN_ATTRIBUTE'}[0];
-		my $newattrname = $newattr->{'VULN_ATTRIBUTE'}[0];
-		my $oldattrdata = $oldattr->{'ATTRIBUTE_DATA'}[0];
-		my $newattrdata = $newattr->{'ATTRIBUTE_DATA'}[0];
-		if ($oldattrname ne $newattrname) {
-			print "Attributes do not match! $oldattrname vs ",
-				"$newattrname\n";
+	#
+	# Get a list of all STIG_DATA attributes for old and new vulnerability
+	#
+
+	my @oldattr = $oldrule->findnodes("STIG_DATA");
+	my @newattr = $newrule->findnodes("STIG_DATA");
+
+	#
+	# Generate a hash for each attribute name and data.
+	#
+
+	my %oldathash = map { $_->findvalue('VULN_ATTRIBUTE') => $_->findvalue('ATTRIBUTE_DATA') } @oldattr;
+	my %newathash = map { $_->findvalue('VULN_ATTRIBUTE') => $_->findvalue('ATTRIBUTE_DATA') } @newattr;
+
+	#
+	# Delete out hash table entries that we specifically ignore
+	# (because they always change, or are new and we don't care if
+	# they are missing from the old checklist).  Note we only delete
+	# from newathash because we use that as the list to base things on.
+	#
+
+	map { delete $newathash{$_}; } @ignoreattr;
+
+	#
+	# So here is our logic where we decide if a vulnerability is the "same"
+	# or not to the point where we can mark it as "not a finding".
+	#
+	# If an attribute exists in the old checklist but not in the new,
+	# we don't care about that and consider it still ok.  Note that we
+	# don't actually check for this case, because we are using the new
+	# list of rules, we don't actually check for this at all.
+	#
+	# Certain attributes always change; those are in @ignoreattr and
+	# those should have been deleted from the hash.
+	#
+	# If an attribute is NEW in the new checklist, then consider the
+	# rule NOT EQUAL.
+	#
+	# Do a string comparison on the attribute data between old and new;
+	# if it is NOT the same, then consider it NOT EQUAL.
+	#
+	# Otherwise it is equal.
+	#
+
+	foreach my $attr (keys %newathash) {
+		if (! exists $oldathash{$attr}) {
+			print "In $vulname attribute $attr not in old checklist\n";
 			return 0;
 		}
 
-		if ($oldattrdata ne $newattrdata) {
-			if ($oldattrname eq 'STIGRef' ||
-			    $oldattrname eq 'Check_Content_Ref') {
-				print "Attr $oldattrname has changed, but ",
-					"we are ignoring it\n";
-			} else {
-				print "Data for attribute $oldattrname does ",
-					"not match\n";
-				print "old: \"$oldattrdata\"\n";
-				print "new: \"$newattrdata\"\n";
-#			my $mask = $oldattrdata ^ $newattrdata;
-#			while ($mask =~ /[^\0]/g) {
-#				print substr($oldattrname, $-[0], 1), ' ',
-#					substr($newattrname, $-[0], 1), ' ',
-#					$-[0], "\n";
-#			}
-				return 0;
-			}
+		if ($oldathash{$attr} ne $newathash{$attr}) {
+			print "In $vulname attribute $attr has changed\n";
+			return 0;
 		}
-	}
-
-	if ($#newdata > -1) {
-		print "Extra attributes in new STIG\n";
-		return 0;
 	}
 
 	return 1;
 }
 
-sub copyrule {
-	my ($oldrule, $newrule, $copystatus) = @_;
+#
+# Get a list of vulernability numbers and nodes for a checklist.
+#
+# This returns a hash reference where the keys are vulnerability numbers
+# (usually in the form V-XXXX) and the value is the LibXML node which
+# corresponds to the vulnerability.
+#
 
-	$newrule->{'FINDING_DETAILS'} = $oldrule->{'FINDING_DETAILS'};
-	$newrule->{'STATUS'} = $oldrule->{'STATUS'} if $copystatus;
+sub getvuls {
+	my ($checklist, $name) = @_;
+	my %hashret;
+
+	#
+	# The vulernabilities are all under the XML path:
+	# /CHECKLIST/STIGS/iSTIG
+	#
+	# Each vulnerability is a VULN node under the above path.
+	#
+	# Currently each VULN node consists of elements consisting
+	# of STIG_DATA elements, a STATUS element, FINDING_DETAILS, COMMENTS,
+	# SEVERITY_OVERRIDE, and SEVERITY_JUSTIFICATION
+	#
+	# The STIG_DATA elements all contain two elements: a VULN_ATTRIBUTE
+	# and ATTRIBUTE_DATA.  These are basically key-value pairs that
+	# contains information about each vulnerability.  The key thing
+	# we care about here is the node that contains a VULN_ATTRIBUTE
+	# of "Vuln_Num"; the corresponding ATTRIBUTE_DATA is the
+	# vulerability number.
+	#
+
+	#
+	# Extract out a list of VULN elements; these are a list of nodes
+	# as described above.
+	#
+
+	my @vuls = $checklist->findnodes('/CHECKLIST/STIGS/iSTIG/VULN');
+
+	die "No vulnerabilities found in $name\n" if (scalar(@vuls) == 0);
+
+	#
+	# For each vulnerability, extract the vulnerability number out
+	# and use it as a key for our hash.  It lives under the STIG_DATA
+	# element that has a VULN_ATTRIBUTE value of "Vuln_Num"
+	#
+
+	foreach my $node (@vuls) {
+		my $v = $node->findvalue('STIG_DATA[VULN_ATTRIBUTE="Vuln_Num"]/ATTRIBUTE_DATA');
+		die "Internal error; cannot find vulnerability number\n"
+			if (! defined($v) || $v eq '');
+
+		die "Internal error: multiple vulnerabilities found ",
+			"for $v\n" if exists($hashret{$v});
+
+		$hashret{$v} = $node;
+	}
+
+	return \%hashret;
 }
+
+#
+# Copy information from the old checklist to the new.  Bring over the
+# FINDING_DETAILS from the old vulnerability to the new.  If the
+# third argument is true, then bring over the STATUS as well, otherwise
+# set it to 'Open'
+#
+
+sub copyrule {
+	my ($oldrule, $newrule, $vulname, $copystatus) = @_;
+
+	my @oldfind = $oldrule->findnodes('FINDING_DETAILS');
+	my @newfind = $newrule->findnodes('FINDING_DETAILS');
+	my @oldstat = $oldrule->findnodes('STATUS');
+	my @newstat = $newrule->findnodes('STATUS');
+
+	my @list = (\@oldfind, \@newfind, \@oldstat, \@newstat);
+
+	foreach (@list) {
+		if (scalar(@$_) != 1) {
+			die "Internal error: for rule $vulname expected a " .
+			    "single match for FINDING_DETAILS or STATUS " .
+			    "but found " . scalar(@$_) . "\n";
+		}
+	}
+
+	#
+	# Get out the text children of these elements
+	#
+
+	my ($oldfindt) = $oldfind[0]->childNodes();
+	my ($newfindt) = $newfind[0]->childNodes();
+	my ($oldstatt) = $oldstat[0]->childNodes();
+	my ($newstatt) = $newstat[0]->childNodes();
+
+	#
+	# So, THIS is weird.  Technically things like FINDING_DETAILS
+	# are element nodes, and any text associated with them are text
+	# nodes that are children of the element node.  But if there is
+	# no text at all, there is no text node.  So for that case we
+	# should use the appendTextNode method to add a text string directly
+	# to the element node
+	#
+
+	if (defined($newfindt)) {
+		$newfindt->setData($oldfindt->data);
+	} else {
+		$newfind[0]->appendTextNode($oldfindt->data);
+	}
+
+	#
+	# There should always be a text node for the status
+	#
+
+	if ($copystatus) {
+		$newstatt->setData($oldstatt->data);
+	} else {
+		$newstatt->setData('Open');
+	}
+}
+
+#foreach $rule (@{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
+#	my $rulever = find_rulever($rule);
+#	my @newrule = grep(find_rulever($_) eq $rulever,
+#			   @{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
+#
+#	die "newrule elements was $#newrule, when it should be 0 or -1\n"
+#		if $#newrule > 0;
+#
+#	if ($#newrule < 0) {
+#		print "Rule $rulever removed from newer STIG\n";
+#	} else {
+#		if (! comprule($rule, $newrule[0])) {
+#			print "Rule $rulever changed in newer STIG\n";
+#			copyrule($rule, $newrule[0], 0) if $import;
+#		} elsif ($rule->{'FINDING_DETAILS'}[0] eq '') {
+#			print "Rule $rulever missing Finding Details\n";
+#			copyrule($rule, $newrule[0], 0) if $import;
+#		} else {
+#			copyrule($rule, $newrule[0], 1) if $import;
+#		}
+#	}
+#}
+#
+#foreach $rule (@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
+#	my $rulever = find_rulever($rule);
+#	my @oldrule = grep(find_rulever($_) eq $rulever,
+#			   @{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
+#
+#	if ($#oldrule < 0) {
+#		print "Rule $rulever added to newer STIG\n";
+#	}
+#
+#	die "oldrule elements was $#oldrule, when it should be 0 or -1\n"
+#		if $#oldrule > 0;
+#}
+#
+##
+## Make sure we copy over asset data
+##
+#
+#if ($import) {
+#	my $asset = $oldcheck->{'ASSET'}[0];
+#
+#	foreach $key (keys %{$asset}) {
+#		next if $key eq 'ASSET_VAL';
+#		$newcheck->{'ASSET'}[0]->{$key} = $asset->{$key};
+#	}
+#
+#	#
+#	# For reasons I do not understand, with the latest version of the
+#	# STIG viewer it sometimes fails to parse the checklist it unless
+#	# the UUID is removed (it will generate a new one when it is saved).
+#	#
+#
+#	my $index = 0;
+#	my $siarray = \@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'STIG_INFO'}[0]->{'SI_DATA'}};
+#	foreach $info (@$siarray) {
+#		if ($info->{'SID_NAME'}[0] eq 'uuid') {
+#			splice(@$siarray, $index, 1);
+#			last;
+#		}
+#		$index++;
+#	}
+#
+#	XMLout($newcheck, RootName => 'CHECKLIST',
+#	       XMLDecl =>
+#		     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+#	       OutputFile => $ARGV[3], NoSort => 1);
+#}
+#
+#exit 0;
+#
+#sub find_rulever {
+#	my $vuln = shift(@_);
+#
+#	my @attr = grep($_->{'VULN_ATTRIBUTE'}[0] eq 'Rule_Ver',
+#			@{$vuln->{'STIG_DATA'}});
+#
+#	die "Internal error: attributes matching Rule_ver was $#attr\n"
+#				if ($#attr != 0);
+#
+#	return $attr[0]->{'ATTRIBUTE_DATA'}[0];
+#}
+#
+sub usage {
+	print <<"EOF";
+Usage:	$0 check old-checklist new-checklist
+	$0 import old-checklist new-checklist output-checklist
+	$0 dump checklist XPath-expression
+EOF
+	exit 1;
+}
+#
+#sub comprule {
+#	my ($oldrule, $newrule) = @_;
+#	my @olddata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
+#				@{$oldrule->{'STIG_DATA'}};
+#	my @newdata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
+#				@{$newrule->{'STIG_DATA'}};
+#	my $oldattr, $newattr, $datatype;
+#
+#	while ($oldattr = shift @olddata, $newattr = shift @newdata) {
+#		my $oldattrname = $oldattr->{'VULN_ATTRIBUTE'}[0];
+#		my $newattrname = $newattr->{'VULN_ATTRIBUTE'}[0];
+#		my $oldattrdata = $oldattr->{'ATTRIBUTE_DATA'}[0];
+#		my $newattrdata = $newattr->{'ATTRIBUTE_DATA'}[0];
+#		if ($oldattrname ne $newattrname) {
+#			print "Attributes do not match! $oldattrname vs ",
+#				"$newattrname\n";
+#			return 0;
+#		}
+#
+#		if ($oldattrdata ne $newattrdata) {
+#			if ($oldattrname eq 'STIGRef' ||
+#			    $oldattrname eq 'Check_Content_Ref') {
+#				print "Attr $oldattrname has changed, but ",
+#					"we are ignoring it\n";
+#			} else {
+#				print "Data for attribute $oldattrname does ",
+#					"not match\n";
+#				print "old: \"$oldattrdata\"\n";
+#				print "new: \"$newattrdata\"\n";
+##			my $mask = $oldattrdata ^ $newattrdata;
+##			while ($mask =~ /[^\0]/g) {
+##				print substr($oldattrname, $-[0], 1), ' ',
+##					substr($newattrname, $-[0], 1), ' ',
+##					$-[0], "\n";
+##			}
+#				return 0;
+#			}
+#		}
+#	}
+#
+#	if ($#newdata > -1) {
+#		print "Extra attributes in new STIG\n";
+#		return 0;
+#	}
+#
+#	return 1;
+#}
+#
+#sub copyrule {
+#	my ($oldrule, $newrule, $copystatus) = @_;
+#
+#	$newrule->{'FINDING_DETAILS'} = $oldrule->{'FINDING_DETAILS'};
+#	$newrule->{'STATUS'} = $oldrule->{'STATUS'} if $copystatus;
+#}

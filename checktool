@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.11 2019/08/04 23:13:21 kenh Exp kenh $
+# $Id: checktool,v 1.12 2019/08/05 00:19:34 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -330,90 +330,6 @@ sub copyrule {
 	}
 }
 
-#foreach $rule (@{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
-#	my $rulever = find_rulever($rule);
-#	my @newrule = grep(find_rulever($_) eq $rulever,
-#			   @{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
-#
-#	die "newrule elements was $#newrule, when it should be 0 or -1\n"
-#		if $#newrule > 0;
-#
-#	if ($#newrule < 0) {
-#		print "Rule $rulever removed from newer STIG\n";
-#	} else {
-#		if (! comprule($rule, $newrule[0])) {
-#			print "Rule $rulever changed in newer STIG\n";
-#			copyrule($rule, $newrule[0], 0) if $import;
-#		} elsif ($rule->{'FINDING_DETAILS'}[0] eq '') {
-#			print "Rule $rulever missing Finding Details\n";
-#			copyrule($rule, $newrule[0], 0) if $import;
-#		} else {
-#			copyrule($rule, $newrule[0], 1) if $import;
-#		}
-#	}
-#}
-#
-#foreach $rule (@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}}) {
-#	my $rulever = find_rulever($rule);
-#	my @oldrule = grep(find_rulever($_) eq $rulever,
-#			   @{$oldcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'VULN'}});
-#
-#	if ($#oldrule < 0) {
-#		print "Rule $rulever added to newer STIG\n";
-#	}
-#
-#	die "oldrule elements was $#oldrule, when it should be 0 or -1\n"
-#		if $#oldrule > 0;
-#}
-#
-##
-## Make sure we copy over asset data
-##
-#
-#if ($import) {
-#	my $asset = $oldcheck->{'ASSET'}[0];
-#
-#	foreach $key (keys %{$asset}) {
-#		next if $key eq 'ASSET_VAL';
-#		$newcheck->{'ASSET'}[0]->{$key} = $asset->{$key};
-#	}
-#
-#	#
-#	# For reasons I do not understand, with the latest version of the
-#	# STIG viewer it sometimes fails to parse the checklist it unless
-#	# the UUID is removed (it will generate a new one when it is saved).
-#	#
-#
-#	my $index = 0;
-#	my $siarray = \@{$newcheck->{'STIGS'}[0]->{'iSTIG'}[0]->{'STIG_INFO'}[0]->{'SI_DATA'}};
-#	foreach $info (@$siarray) {
-#		if ($info->{'SID_NAME'}[0] eq 'uuid') {
-#			splice(@$siarray, $index, 1);
-#			last;
-#		}
-#		$index++;
-#	}
-#
-#	XMLout($newcheck, RootName => 'CHECKLIST',
-#	       XMLDecl =>
-#		     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-#	       OutputFile => $ARGV[3], NoSort => 1);
-#}
-#
-#exit 0;
-#
-#sub find_rulever {
-#	my $vuln = shift(@_);
-#
-#	my @attr = grep($_->{'VULN_ATTRIBUTE'}[0] eq 'Rule_Ver',
-#			@{$vuln->{'STIG_DATA'}});
-#
-#	die "Internal error: attributes matching Rule_ver was $#attr\n"
-#				if ($#attr != 0);
-#
-#	return $attr[0]->{'ATTRIBUTE_DATA'}[0];
-#}
-#
 sub usage {
 	print <<"EOF";
 Usage:	$0 check old-checklist new-checklist
@@ -422,58 +338,3 @@ Usage:	$0 check old-checklist new-checklist
 EOF
 	exit 1;
 }
-#
-#sub comprule {
-#	my ($oldrule, $newrule) = @_;
-#	my @olddata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
-#				@{$oldrule->{'STIG_DATA'}};
-#	my @newdata = sort {$a->{'VULN_ATTRIBUTE'}[0] cmp $b->{'VULN_ATTRIBUTE'}[0]}
-#				@{$newrule->{'STIG_DATA'}};
-#	my $oldattr, $newattr, $datatype;
-#
-#	while ($oldattr = shift @olddata, $newattr = shift @newdata) {
-#		my $oldattrname = $oldattr->{'VULN_ATTRIBUTE'}[0];
-#		my $newattrname = $newattr->{'VULN_ATTRIBUTE'}[0];
-#		my $oldattrdata = $oldattr->{'ATTRIBUTE_DATA'}[0];
-#		my $newattrdata = $newattr->{'ATTRIBUTE_DATA'}[0];
-#		if ($oldattrname ne $newattrname) {
-#			print "Attributes do not match! $oldattrname vs ",
-#				"$newattrname\n";
-#			return 0;
-#		}
-#
-#		if ($oldattrdata ne $newattrdata) {
-#			if ($oldattrname eq 'STIGRef' ||
-#			    $oldattrname eq 'Check_Content_Ref') {
-#				print "Attr $oldattrname has changed, but ",
-#					"we are ignoring it\n";
-#			} else {
-#				print "Data for attribute $oldattrname does ",
-#					"not match\n";
-#				print "old: \"$oldattrdata\"\n";
-#				print "new: \"$newattrdata\"\n";
-##			my $mask = $oldattrdata ^ $newattrdata;
-##			while ($mask =~ /[^\0]/g) {
-##				print substr($oldattrname, $-[0], 1), ' ',
-##					substr($newattrname, $-[0], 1), ' ',
-##					$-[0], "\n";
-##			}
-#				return 0;
-#			}
-#		}
-#	}
-#
-#	if ($#newdata > -1) {
-#		print "Extra attributes in new STIG\n";
-#		return 0;
-#	}
-#
-#	return 1;
-#}
-#
-#sub copyrule {
-#	my ($oldrule, $newrule, $copystatus) = @_;
-#
-#	$newrule->{'FINDING_DETAILS'} = $oldrule->{'FINDING_DETAILS'};
-#	$newrule->{'STATUS'} = $oldrule->{'STATUS'} if $copystatus;
-#}

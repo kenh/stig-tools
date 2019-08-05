@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.12 2019/08/05 00:19:34 kenh Exp kenh $
+# $Id: checktool,v 1.13 2019/08/05 00:21:26 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -131,6 +131,47 @@ foreach my $vul (@xfervuls) {
 }
 
 if ($import) {
+	#
+	# Copy over asset data.  Loop through the asset data in the old
+	# file and transfer it over IF the node exists in 
+	#
+
+	my @assetlist = $oldcheck->findnodes('/CHECKLIST/ASSET/*');
+	my ($newasset) = $newcheck->findnodes('/CHECKLIST/ASSET');
+
+	foreach my $asset (@assetlist) {
+		if (! $newasset->exists($asset->nodeName)) {
+			print "Warning: asset " . $asset->nodeName .
+				" does not exist in new checklist\n";
+			next;
+		}
+		#
+		# Skip over blank nodes
+		#
+		if (! defined($asset->textContent) ||
+		    $asset->textContent eq '') {
+			next;
+		}
+
+		#
+		# If there's a text node then grab that and set it,
+		# otherwise use appendTextNode
+		#
+
+		my ($newanode) = $newasset->findnodes($asset->nodeName);
+
+		if ($newanode->exists('text()')) {
+			my ($newtnode) = $newanode->findnodes('text()');
+			$newtnode->setData($asset->textContent);
+		} else {
+			$newanode->appendTextNode($asset->textContent);
+		}
+	}
+
+	#
+	# Generate output file
+	#
+
 	$newcheck->toFile($ARGV[3], 0);
 }
 

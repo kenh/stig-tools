@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.10 2018/05/03 18:22:12 kenh Exp kenh $
+# $Id: checktool,v 1.11 2019/08/04 23:13:21 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -35,6 +35,7 @@
 
 
 use XML::LibXML;
+use YAML::Syck;
 
 # A list of elements we ignore for rule comparisons
 
@@ -54,7 +55,7 @@ if ($ARGV[0] eq 'check') {
 	usage();
 }
 
-if (($check && $#ARGV != 2) || ($import && $#ARGV != 3) ||
+if (($check && $#ARGV != 2) || ($import && ( $#ARGV != 3 && $#ARGV != 4)) ||
     ($dump && $#ARGV != 2)) {
 	usage();
 }
@@ -63,6 +64,9 @@ if ($check || $import || $dump) {
 	$oldcheck = XML::LibXML->load_xml(location => $ARGV[1]);
 	if ($check || $import) {
 		$newcheck = XML::LibXML->load_xml(location => $ARGV[2]);
+	}
+	if ($import && $#ARGV == 4) {
+		$fdata = LoadFile($ARGV[4]);
 	}
 }
 
@@ -119,7 +123,7 @@ foreach my $vul (@xfervuls) {
 	# We're printing out the exact difference in comprule now
 
 	if ($import) {
-		copyrule($oldvuls->{$vul}, $newvuls->{$vul}, $vul,
+		copyrule($oldvuls->{$vul}, $newvuls->{$vul}, $vul, $fdata,
 			 comprule($oldvuls->{$vul}, $newvuls->{$vul}, $vul));
 	} else {
 		comprule($oldvuls->{$vul}, $newvuls->{$vul}, $vul);
@@ -261,7 +265,7 @@ sub getvuls {
 #
 
 sub copyrule {
-	my ($oldrule, $newrule, $vulname, $copystatus) = @_;
+	my ($oldrule, $newrule, $vulname, $fdata, $copystatus) = @_;
 
 	my @oldfind = $oldrule->findnodes('FINDING_DETAILS');
 	my @newfind = $newrule->findnodes('FINDING_DETAILS');
@@ -296,10 +300,23 @@ sub copyrule {
 	# to the element node
 	#
 
-	if (defined($newfindt)) {
-		$newfindt->setData($oldfindt->data);
+	my $finding;
+	my $status;
+
+	if (defined($fdata) && exists $fdata->{$vulname}) {
+		print "Using finding data for $vulname\n";
+		$finding = $fdata->{$vulname}->{'FINDING_DETAIL'};
+		chomp($finding);
+		$status = $fdata->{$vulname}->{'STATUS'};
 	} else {
-		$newfind[0]->appendTextNode($oldfindt->data);
+		$finding = $oldfindt->data;
+		$status = $oldstatt->data;
+	}
+
+	if (defined($newfindt)) {
+		$newfindt->setData($finding);
+	} else {
+		$newfind[0]->appendTextNode($finding);
 	}
 
 	#
@@ -307,7 +324,7 @@ sub copyrule {
 	#
 
 	if ($copystatus) {
-		$newstatt->setData($oldstatt->data);
+		$newstatt->setData($status);
 	} else {
 		$newstatt->setData('Open');
 	}
@@ -400,7 +417,7 @@ sub copyrule {
 sub usage {
 	print <<"EOF";
 Usage:	$0 check old-checklist new-checklist
-	$0 import old-checklist new-checklist output-checklist
+	$0 import old-checklist new-checklist output-checklist [finding-yaml]
 	$0 dump checklist XPath-expression
 EOF
 	exit 1;

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.14 2019/08/05 00:52:39 kenh Exp kenh $
+# $Id: checktool,v 1.15 2019/08/06 23:32:48 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -166,6 +166,41 @@ if ($import) {
 		} else {
 			$newanode->appendTextNode($asset->textContent);
 		}
+	}
+
+	#
+	# libxml wants to turn empty elements into self-closing tags.
+	# Specifically, it wants to turn things like:
+	#
+	# <FOO></FOO>
+	#
+	# into
+	#
+	# <FOO/>
+	#
+	# Which is technically fine as they are semantically equivalent ...
+	# but in my experience the STIG viewer can be kind of sensitive to
+	# changes in the XML like this (I think it is telling that the
+	# checklists we get from the STIG viewer never use self-closing
+	# tags).  So for EVERY element in the output document that is
+	# empty, add an empty text node.  That will force libxml to
+	# never use a self-closing tag.
+	#
+
+	#
+	# This XPath expression breaks down like this:
+	#
+	# //*			Match all nodes in document
+	# [not(node())]		Only ones without children.  Note:
+	#			A standalone node() means child::node().
+	#
+
+	for my $node ($newcheck->findnodes('//*[not(node())]')) {
+		#
+		# appendText doesn't work in this case; we actually need
+		# to make sure we create a text node.
+		#
+		$node->appendChild($newcheck->createTextNode(''));
 	}
 
 	#

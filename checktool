@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.13 2019/08/05 00:21:26 kenh Exp kenh $
+# $Id: checktool,v 1.14 2019/08/05 00:52:39 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -350,7 +350,15 @@ sub copyrule {
 		chomp($finding);
 		$status = $fdata->{$vulname}->{'STATUS'};
 	} else {
-		$finding = $oldfindt->data;
+		#
+		# Make sure there was finding data; if not, use a
+		# blank string
+		#
+		if (defined($oldfindt)) {
+			$finding = $oldfindt->data;
+		} else {
+			$finding = '';
+		}
 		$status = $oldstatt->data;
 	}
 

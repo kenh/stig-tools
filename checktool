@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.15 2019/08/06 23:32:48 kenh Exp kenh $
+# $Id: checktool,v 1.16 2019/08/06 23:45:50 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -29,10 +29,6 @@
 # contains finding details to be placed in the output file for specific
 # vulnerabilities.
 #
-# Erci Stern: 4/30/2018 - added test to comprule for Check_Content_Ref
-#                         attribute
-#
-
 
 use XML::LibXML;
 use YAML::Syck;
@@ -335,7 +331,7 @@ sub getvuls {
 
 #
 # Copy information from the old checklist to the new.  Bring over the
-# FINDING_DETAILS from the old vulnerability to the new.  If the
+# FINDING_DETAILS and COMMENTS from the old vulnerability to the new.  If the
 # third argument is true, then bring over the STATUS as well, otherwise
 # set it to 'Open'
 #
@@ -345,16 +341,19 @@ sub copyrule {
 
 	my @oldfind = $oldrule->findnodes('FINDING_DETAILS');
 	my @newfind = $newrule->findnodes('FINDING_DETAILS');
+	my @oldcomm = $oldrule->findnodes('COMMENTS');
+	my @newcomm = $newrule->findnodes('COMMENTS');
 	my @oldstat = $oldrule->findnodes('STATUS');
 	my @newstat = $newrule->findnodes('STATUS');
 
-	my @list = (\@oldfind, \@newfind, \@oldstat, \@newstat);
+	my @list = (\@oldfind, \@newfind, \@oldcomm, \@newcomm,
+		    \@oldstat, \@newstat);
 
 	foreach (@list) {
 		if (scalar(@$_) != 1) {
 			die "Internal error: for rule $vulname expected a " .
-			    "single match for FINDING_DETAILS or STATUS " .
-			    "but found " . scalar(@$_) . "\n";
+			    "single match for FINDING_DETAILS, COMMENTS, or " .
+			    "STATUS but found " . scalar(@$_) . "\n";
 		}
 	}
 
@@ -364,6 +363,8 @@ sub copyrule {
 
 	my ($oldfindt) = $oldfind[0]->childNodes();
 	my ($newfindt) = $newfind[0]->childNodes();
+	my ($oldcommt) = $oldcomm[0]->childNodes();
+	my ($newcommt) = $newcomm[0]->childNodes();
 	my ($oldstatt) = $oldstat[0]->childNodes();
 	my ($newstatt) = $newstat[0]->childNodes();
 
@@ -401,6 +402,18 @@ sub copyrule {
 		$newfindt->setData($finding);
 	} else {
 		$newfind[0]->appendTextNode($finding);
+	}
+
+	#
+	# If there was a comment, then copy it over
+	#
+
+	if (defined($oldcommt)) {
+		if (defined($newcommt)) {
+			$newcommt->setData($oldcommt->data);
+		} else {
+			$newcomm[0]->appendTextNode($oldcommt->data);
+		}
 	}
 
 	#

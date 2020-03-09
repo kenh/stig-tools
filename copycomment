@@ -1,0 +1,63 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+# Copy COMMENTS to FINDING_DETAILS
+#
+
+use XML::LibXML;
+
+if ($#ARGV != 1) {
+	usage();
+}
+
+$input = XML::LibXML->load_xml(location => $ARGV[0]);
+
+@vuls = $input->findnodes('/CHECKLIST/STIGS/iSTIG/VULN');
+
+die "No vulnerabilities found in $ARGV[0]\n" if (scalar(@vuls) == 0);
+
+foreach my $vul (@vuls) {
+	my $v = $vul->findvalue('STIG_DATA[VULN_ATTRIBUTE="Vuln_Num"]/ATTRIBUTE_DATA');
+
+	die "Internal error: cannot find vulnerability number\n"
+		if (! defined($v) || $v eq '');
+
+	my $comment = $vul->findvalue('COMMENTS');
+
+	if (defined($comment) && $comment ne '') {
+		print "Copying COMMENT to FINDING_DETAILS for $v\n";
+
+		my $finding = ($vul->findnodes('FINDING_DETAILS'))[0];
+
+		die "Internal error: no FINDING_DETAILS for $v\n"
+			if (! defined($finding));
+
+		my ($ft) = $finding->childNodes();
+
+		if (defined($ft)) {
+			$ft->setData($comment);
+		} else {
+			$finding->appendTextNode($comment);
+		}
+	}
+}
+
+#
+# Make sure we don't have any self-closing tags
+#
+
+for my $node ($input->findnodes('//*[not(node())]')) {
+	$node->appendChild($input->createTextNode(''));
+}
+
+$input->toFile($ARGV[1], 0);
+
+exit 0;
+
+sub usage {
+	print <<"EOF";
+Usage:	$0 input-file output-file
+EOF
+	exit 1;
+}

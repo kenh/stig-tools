@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.17 2020/01/22 16:31:32 kenh Exp kenh $
+# $Id: checktool,v 1.18 2020/05/29 19:00:45 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -91,7 +91,7 @@ $newvuls = getvuls($newcheck, $ARGV[2]);
 # which ones have been added
 #
 
-foreach my $vul (sort(keys $oldvuls)) {
+foreach my $vul (sort(keys %$oldvuls)) {
 	if (! exists $newvuls->{$vul}) {
 		print "Vulnerability $vul removed from new checklist\n";
 	} else {
@@ -99,7 +99,7 @@ foreach my $vul (sort(keys $oldvuls)) {
 	}
 }
 
-foreach my $vul (sort(keys $newvuls)) {
+foreach my $vul (sort(keys %$newvuls)) {
 	if (! exists $oldvuls->{$vul}) {
 		print "Vulnerability $vul added in new checklist\n";
 	}

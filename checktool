@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.18 2020/05/29 19:00:45 kenh Exp kenh $
+# $Id: checktool,v 1.19 2020/06/03 16:55:29 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -35,16 +35,22 @@ use YAML::Syck;
 
 # A list of elements we ignore for rule comparisons
 
-@ignoreattr = ('STIGRef', 'Check_Content_Ref', 'Weight', 'STIG_UUID');
+@ignoreattr = ('STIGRef', 'Check_Content_Ref', 'Weight', 'STIG_UUID',
+	       'LEGACY_ID', 'Rule_ID', 'Vuln_Num', 'TargetKey');
 
 if ($#ARGV < 0) {
 	usage();
 }
 
+$legacy = 0;
+
 if ($ARGV[0] eq 'check') {
 	$check = 1;
 } elsif ($ARGV[0] eq 'import') {
 	$import = 1;
+} elsif ($ARGV[0] eq 'legacyimport') {
+	$import = 1;
+	$legacy = 1;
 } elsif ($ARGV[0] eq 'dump') {
 	$dump = 1;
 } else {
@@ -83,8 +89,8 @@ if ($dump) {
 	exit 0;
 }
 
-$oldvuls = getvuls($oldcheck, $ARGV[1]);
-$newvuls = getvuls($newcheck, $ARGV[2]);
+$oldvuls = getvuls($oldcheck, $ARGV[1], 0);
+$newvuls = getvuls($newcheck, $ARGV[2], $legacy);
 
 #
 # Report which vulnerabilities have been removed from old to new, and
@@ -279,7 +285,7 @@ sub comprule {
 #
 
 sub getvuls {
-	my ($checklist, $name) = @_;
+	my ($checklist, $name, $uselegacy) = @_;
 	my %hashret;
 
 	#
@@ -316,7 +322,14 @@ sub getvuls {
 	#
 
 	foreach my $node (@vuls) {
-		my $v = $node->findvalue('STIG_DATA[VULN_ATTRIBUTE="Vuln_Num"]/ATTRIBUTE_DATA');
+		my $v;
+
+		if ($uselegacy) {
+			$v = $node->findvalue('STIG_DATA[VULN_ATTRIBUTE="LEGACY_ID" and starts-with(ATTRIBUTE_DATA, "V-")]/ATTRIBUTE_DATA');
+		} else {
+			$v = $node->findvalue('STIG_DATA[VULN_ATTRIBUTE="Vuln_Num"]/ATTRIBUTE_DATA');
+		}
+
 		die "Internal error; cannot find vulnerability number\n"
 			if (! defined($v) || $v eq '');
 
@@ -431,7 +444,13 @@ sub usage {
 	print <<"EOF";
 Usage:	$0 check old-checklist new-checklist
 	$0 import old-checklist new-checklist output-checklist [finding-yaml]
+	$0 legacyimport [import-options]
 	$0 dump checklist XPath-expression
+
+	legacyimport should be used migrating from a checklist that has changed
+	major version numbers.  Instead of matching up vulnerabilies based
+	on the vulnerability number, it will use the "Legacy ID" in
+	"new-checklist" as the matching element.
 EOF
 	exit 1;
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id$
+# $Id: checkedit,v 1.1 2022/03/17 18:54:27 kenh Exp kenh $
 #
 # Simple editor for STIG checklists
 #
@@ -91,6 +91,7 @@ foreach my $file (@ARGV) {
 	my $xml = XML::LibXML->load_xml(location => $file);
 	my $modify = 0;
 	my $t;
+	my $v;
 
 	# We assume all of the arguments are valid at this point
 
@@ -105,7 +106,7 @@ foreach my $file (@ARGV) {
 		my $value = exists($tvalid{$t}) ? ${$tvalid{$t}}{$tval} :
 				$tval;
 
-		setnode($tnode, $tval);
+		setnode($tnode, $value);
 	}
 
 	while ($t = shift @etarget) {
@@ -121,6 +122,9 @@ foreach my $file (@ARGV) {
 
 		eval "\$_ = '$cur'; $texpr ;";
 
+		die "Stopping due to expression error (file $file)\n"
+					if ($@ ne '');
+
 		setnode($tnode, $_);
 	}
 
@@ -130,6 +134,73 @@ foreach my $file (@ARGV) {
 		die "Unable to find target data for $t\n" if ! defined $tnode;
 
 		print $tnode->textContent, "\n";
+	}
+
+	while ($v = shift(@vuln)) {
+		my $vinfo = shift @vuln;
+		my $vtext = shift @vuln;
+
+		my ($vn) = $xml->findnodes("/CHECKLIST/STIGS/iSTIG/VULN[STIG_DATA[VULN_ATTRIBUTE=\"Vuln_Num\" and ATTRIBUTE_DATA=\"$v\"]]");
+
+		if (! defined $vn) {
+			warn "Cannot find vulnerability $v in $file\n";
+			next;
+		}
+
+		my ($vdata) = $vn->findnodes("$vkeys{$vinfo}");
+
+		die "Cannot find $vinfo for $v in $file\n" if ! defined $vdata;
+
+		$modify = 1;
+
+		my $value = exists($vvalid{$vinfo}) ?
+				${$vvalid{$vinfo}}{$vtext} : $vtext;
+
+		setnode($vdata, $value);
+	}
+
+	while ($v = shift(@evuln)) {
+		my $vinfo = shift @evuln;
+		my $vexpr = shift @evuln;
+
+		my ($vn) = $xml->findnodes("/CHECKLIST/STIGS/iSTIG/VULN[STIG_DATA[VULN_ATTRIBUTE=\"Vuln_Num\" and ATTRIBUTE_DATA=\"$v\"]]");
+
+		if (! defined $vn) {
+			warn "Cannot find vulnerability $v in $file\n";
+			next;
+		}
+
+		my ($vdata) = $vn->findnodes("$vkeys{$vinfo}");
+
+		die "Cannot find $vinfo for $v in $file\n" if ! defined $vdata;
+
+		$modify = 1;
+
+		my $cur = $vdata->textContent;
+
+		eval "\$_ = '$cur'; $vexpr ;";
+
+		die "Stopping due to expression error (file $file)\n"
+					if ($@ ne '');
+
+		setnode($vdata, $_);
+	}
+
+	while ($v = shift(@pvuln)) {
+		my $vinfo = shift @pvuln;
+
+		my ($vn) = $xml->findnodes("/CHECKLIST/STIGS/iSTIG/VULN[STIG_DATA[VULN_ATTRIBUTE=\"Vuln_Num\" and ATTRIBUTE_DATA=\"$v\"]]");
+
+		if (! defined $vn) {
+			warn "Cannot find vulnerability $v in $file\n";
+			next;
+		}
+
+		my ($vdata) = $vn->findnodes("$vkeys{$vinfo}");
+
+		die "Cannot find $vinfo for $v in $file\n" if ! defined $vdata;
+
+		print $vdata->textContent, "\n";
 	}
 
 	if ($modify) {

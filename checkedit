@@ -1,0 +1,310 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+# Simple editor for STIG checklists
+#
+# This tool is designed to be a simple editor (a la sed) for items in
+# STIG checklists
+#
+
+use XML::LibXML;
+use Getopt::Long;
+use Data::Dumper;
+
+my @targetlist = (
+	[ 'type', 'ASSET_TYPE', 'Asset Type', {
+		'comp' => 'Computing',
+		'noncomp' => 'Non-Computing',
+	} ],
+	[ 'role', 'ROLE', 'System Role', {
+		'none' => 'None',
+		'member' => 'Member Server',
+		'workstation' => 'Workstation',
+		'dcontroller' => 'Domain Controller',
+	} ],
+ 	[ 'hostname', 'HOST_NAME', 'System Hostname' ],
+	[ 'ipaddr', 'HOST_IP', 'System IP address' ],
+	[ 'mac', 'HOST_MAC', 'System MAC address' ],
+	[ 'fqdn', 'HOST_FQDN', 'System Fully Qualified Domain Name' ],
+	[ 'comment', 'TARGET_COMMENT', 'Target Comments' ],
+	[ 'area', 'TECH_AREA', 'Technology Area', {
+		'none' => '',
+		'app' => 'Application Review',
+	  	'bsecurity' => 'Boundary Security',
+		'cdsadmin' => 'CDS Admin Review',
+		'cdstech' => 'CDS Technical Review',
+	  	'database' => 'Database Review',
+		'dns' => 'Domain Name System (DNS)',
+		'exchange' => 'Exchange Server',
+	  	'hbss' => 'Host Based System Security (HBSS)',
+		'intnetwork' => 'Internal Network',
+		'mobility' => 'Mobility',
+		'relnetwork' => 'Releasable Networks (REL)',
+		'tradsec' => 'Traditional Security',
+		'unix' => 'UNIX OS',
+		'vvoip' => 'VVOIP Review',
+		'web' => 'Web Review',
+		'windows' => 'Windows OS',
+		'other' => 'Other Review',
+	} ],
+	[ 'webdb', 'WEB_OR_DATABASE', 'Web Or Database', {
+		'true' => 'true',
+		'false' => 'false',
+	} ],
+	[ 'webdbsite', 'WEB_DB_SITE', 'Web Or DB Site' ],
+	[ 'webdbinstance', 'WEB_DB_INSTANCE', 'Web Or DB Instance' ],
+);
+
+my @vulnlist = (
+	[ 'status', 'STATUS', 'Finding Status', {
+		'open' => 'Open',
+		'nf', => 'NotAFinding',
+		'na', => 'Not_Applicable',
+		'nr', => 'Not_Reviewed',
+	} ],
+	[ 'details', 'FINDING_DETAILS', 'Finding Details' ],
+	[ 'comments', 'COMMENTS', 'Comments' ],
+);
+
+my (@target, @vuln, @etarget, @evul, @ptarget, @pvuln);
+my (%tkeys, %tinfo, %tvalid, %vkeys, %vinfo, %vvalid);
+my $outputfile = '';
+
+parselist(\@targetlist, \%tkeys, \%tinfo, \%tvalid);
+parselist(\@vulnlist, \%vkeys, \%vinfo, \%vvalid);
+
+GetOptions('--target=s{2}' => \@target, '--vuln=s{3}' => \@vuln,
+	   '--etarget=s{2}' => \@etarget, '--evuln=s{3}' => \@evuln,
+	   '--ptarget=s' => \@ptarget, '--pvuln=s{2}' => \@pvuln,
+	   '--output=s' => \$outputfile)
+or usage();
+
+if ($#ARGV == -1 || ( $#ARGV > 0 && $outputfile)) {
+	usage();
+}
+
+checkargs(\%tkeys, \%tvalid, \@target, \@etarget, \@ptarget, 0);
+checkargs(\%vkeys, \%vvalid, \@vuln, \@evuln, \@pvuln, 1);
+
+foreach my $file (@ARGV) {
+	my $xml = XML::LibXML->load_xml(location => $file);
+	my $modify = 0;
+	my $t;
+
+	# We assume all of the arguments are valid at this point
+
+	while ($t = shift @target) {
+		my $tval = shift @target;
+		my ($tnode) = $xml->findnodes("/CHECKLIST/ASSET/$tkeys{$t}");
+
+		die "Unable to find target data for $t\n" if ! defined $tnode;
+
+		$modify = 1;
+
+		my $value = exists($tvalid{$t}) ? ${$tvalid{$t}}{$tval} :
+				$tval;
+
+		setnode($tnode, $tval);
+	}
+
+	while ($t = shift @etarget) {
+		my $texpr = shift @etarget;
+
+		my ($tnode) = $xml->findnodes("/CHECKLIST/ASSET/$tkeys{$t}");
+
+		die "Unable to find target data for $t\n" if ! defined $tnode;
+
+		$modify = 1;
+
+		my $cur = $tnode->textContent;
+
+		eval "\$_ = '$cur'; $texpr ;";
+
+		setnode($tnode, $_);
+	}
+
+	foreach my $t (@ptarget) {
+		my ($tnode) = $xml->findnodes("/CHECKLIST/ASSET/$tkeys{$t}");
+
+		die "Unable to find target data for $t\n" if ! defined $tnode;
+
+		print $tnode->textContent, "\n";
+	}
+
+	if ($modify) {
+		#
+		# Make sure no self-closing tags
+		#
+		foreach my $node ($xml->findnodes('//*[not(node())]')) {
+			$node->appendChild($xml->createTextNode(''));
+		}
+		$xml->toFile($output ne '' ? $output : $file);
+	} else {
+		if ($output ne '') {
+			warn "Output file given, but file not modified!\n";
+		}
+	}
+}
+
+exit 0;
+
+sub usage {
+
+print <<EOH;
+Edit one or more STIG checklists
+
+Usage: $0 [options] checklist-file [checklist-file ...]
+
+Valid options:
+
+	--output FILENAME
+		Write the edited checklist into FILENAME (by default
+		given checklist will be edited in place).  If given
+		only one checklist can be given on the command line.
+
+	--target ASSET-NAME VALUE
+		Set or replace the target information ASSET-NAME with
+		value.
+
+	--etarget ASSET-NAME EXPRESSION
+		Modify the target infomation ASSET-NAME using the
+		Perl expression EXPRESSION.  \$_ is set to the current
+		value of ASSET-NAME.
+
+	--ptarget ASSET-NAME
+		Print the current value of ASSET-NAME
+
+	--vuln VULN-NUMBER VDATA VALUE
+		Change the VDATA of vulnerability VULN-NUMBER to the value
+		of VALUE.
+
+	--evuln VULN-NUMBER VDATA EXPRESSION
+		Modify the VDATA of vulnerability VULN-NUMBER using the
+		Perl expression EXPRESSION.  \$_ is set to the current
+		value of DATA.
+
+	--pvuln VULN-NUMBER VDATA
+		Print out the value of VDATA from vulnerability VULN-NUMBER
+
+EOH
+
+	print "Valid values of ASSET-NAME are:\n";
+
+	foreach my $tname (keys %tkeys) {
+		printf "\n\t%-16s%s\n", $tname, $tinfo{$tname};
+		if (exists($tvalid{$tname})) {
+			print "\tValid values for $tinfo{$tname} are:\n";
+			foreach my $valid (keys %{$tvalid{$tname}}) {
+				printf "\t\t%-14s%s\n", $valid,
+					${$tvalid{$tname}}{$valid};
+			}
+		}
+	}
+
+	print"\nValid values of VDATA are:\n";
+
+	foreach my $vname (keys %vkeys) {
+		printf "\n\t%-16s%s\n", $vname, $vinfo{$vname};
+		if (exists($vvalid{$vname})) {
+			print "\tValid values for $vinfo{$vname} are:\n";
+			foreach my $valid (keys %{$vvalid{$vname}}) {
+				printf "\t\t%-14s%s\n", $valid,
+					${$vvalid{$vname}}{$valid};
+			}
+		}
+	}
+
+	exit(1);
+}
+
+sub parselist {
+	my ($list, $keys, $info, $valid) = @_;
+
+	foreach my $entry (@$list) {
+		my $key = $$entry[0];
+		$$keys{$key} = $$entry[1];
+		$$info{$key} = $$entry[2];
+		if (defined $$entry[3]) {
+			$$valid{$key} = $$entry[3];
+		}
+	}
+}
+
+sub checkargs {
+	my ($keys, $valid, $slist, $elist, $plist, $extra) = @_;
+
+	#
+	# Yes, make copies
+	#
+
+	my @sl = @$slist;
+	my @el = @$elist;
+	my @pl = @$plist;
+	my $name;
+
+	foreach my $array (\@sl, \@el) {
+		if ($extra) {
+			shift @$array;
+		}
+
+		while ($name = shift @$array) {
+			if (! exists($$keys{$name})) {
+				print "Entry $name is not valid\n";
+				print "Valid values are:\n";
+				print join("\n", keys %$keys);
+				print "\n";
+				exit(1);
+			}
+
+			my $val = shift @$array;
+			
+			if (exists($$valid{$name}) &&
+				! exists(${$$valid{$name}}{$val})) {
+				print "Entry of $val for $name is not valid\n";
+				print "Valid values are: \n";
+				print join("\n", keys %{$$valid{$name}});
+				print "\n";
+				exit(1);
+			}
+
+			if ($extra) {
+				shift @$array;
+			}
+		}
+	}
+
+	if ($extra) {
+		shift @pl;
+	}
+
+	while ($name = shift @pl) {
+		if (! exists($$keys{$name})) {
+			print "Entry $name is not valid\n";
+			print "Valid values are:\n";
+			print join("\n", keys %$keys);
+			print "\n";
+			exit(1);
+		}
+
+		if ($extra) {
+			shift @pl;
+		}
+	}
+}
+
+sub setnode {
+	my ($node, $val) = @_;
+
+	#
+	# Sigh.  Sometimes we don't have a child text node; if we don't,
+	# then create one;
+	#
+
+	if ($node->exists('text()')) {
+		my ($tnode) = $node->findnodes('text()');
+		$tnode->setData($val);
+	} else {
+		$node->appendTextNode($val);
+	}
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checkedit,v 1.1 2022/03/17 18:54:27 kenh Exp kenh $
+# $Id: checkedit,v 1.2 2022/03/17 19:56:37 kenh Exp kenh $
 #
 # Simple editor for STIG checklists
 #
@@ -118,9 +118,9 @@ foreach my $file (@ARGV) {
 
 		$modify = 1;
 
-		my $cur = $tnode->textContent;
+		$_ = $tnode->textContent;
 
-		eval "\$_ = '$cur'; $texpr ;";
+		eval "$texpr ;";
 
 		die "Stopping due to expression error (file $file)\n"
 					if ($@ ne '');
@@ -176,9 +176,9 @@ foreach my $file (@ARGV) {
 
 		$modify = 1;
 
-		my $cur = $vdata->textContent;
+		$_ = $vdata->textContent;
 
-		eval "\$_ = '$cur'; $vexpr ;";
+		eval "$vexpr ;";
 
 		die "Stopping due to expression error (file $file)\n"
 					if ($@ ne '');

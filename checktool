@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.19 2020/06/03 16:55:29 kenh Exp kenh $
+# $Id: checktool,v 1.20 2022/03/07 16:42:02 kenh Exp kenh $
 #
 # Simple tool for manipulating STIG checklists
 #
@@ -9,7 +9,7 @@
 # appropriate entries, you can use this tool to migrate all of your filled-in
 # data to a new version of the checklist.
 #
-# There are three subcommands: "dump", "check", and "import".
+# There are four subcommands: "dump", "check", "import", and "legacyimport".
 #
 # "dump" outputs the matches for the given XPath expression given the
 # input checklist.  It is intended only to be used by people who have to
@@ -28,6 +28,11 @@
 # in the response.  'import' can also take the name of the YAML file which
 # contains finding details to be placed in the output file for specific
 # vulnerabilities.
+#
+# "legacyimport" is the same as import, but when doing vulnerability matching
+# between checklists it will look for the V-number using the "LEGACY_ID"
+# attribute in the new checklist.  This is intended when vulnerability
+# numbers are changed by the STIG provider.
 #
 
 use XML::LibXML;

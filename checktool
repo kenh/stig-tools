@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 #
-# $Id: checktool,v 1.20 2022/03/07 16:42:02 kenh Exp kenh $
-#
 # Simple tool for manipulating STIG checklists
 #
 # This tool can be used for manipulating checklists produced by the

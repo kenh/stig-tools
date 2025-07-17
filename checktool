@@ -39,7 +39,7 @@ use YAML::Syck;
 # A list of elements we ignore for rule comparisons
 
 @ignoreattr = ('STIGRef', 'Check_Content_Ref', 'Weight', 'STIG_UUID',
-	       'LEGACY_ID', 'Rule_ID', 'Vuln_Num', 'TargetKey');
+	       'LEGACY_ID', 'CCI_REF', 'Rule_ID', 'Vuln_Num', 'TargetKey');
 
 if ($#ARGV < 0) {
 	usage();

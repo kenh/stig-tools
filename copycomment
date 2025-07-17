@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copy COMMENTS to FINDING_DETAILS
+# Copy FINDING_DETAILS to COMMENTS if the status is NotAFinding
 #
 
 use XML::LibXML;
@@ -21,22 +21,29 @@ foreach my $vul (@vuls) {
 	die "Internal error: cannot find vulnerability number\n"
 		if (! defined($v) || $v eq '');
 
-	my $comment = $vul->findvalue('COMMENTS');
+	my $status = $vul->findvalue('STATUS');
 
-	if (defined($comment) && $comment ne '') {
-		print "Copying COMMENT to FINDING_DETAILS for $v\n";
+	if ($status ne 'NotAFinding' && $status ne 'Not_Applicable') {
+		print "Skipping $v, status is $status\n";
+		next;
+	}
 
-		my $finding = ($vul->findnodes('FINDING_DETAILS'))[0];
+	my $details = $vul->findvalue('FINDING_DETAILS');
 
-		die "Internal error: no FINDING_DETAILS for $v\n"
-			if (! defined($finding));
+	if (defined($details) && $details ne '') {
+		print "Copying FINDING_DETAILS to COMMENTS for $v\n";
 
-		my ($ft) = $finding->childNodes();
+		my $comments = ($vul->findnodes('COMMENTS'))[0];
 
-		if (defined($ft)) {
-			$ft->setData($comment);
+		die "Internal error: no COMMENTS for $v\n"
+			if (! defined($comments));
+
+		my ($ct) = $comments->childNodes();
+
+		if (defined($ct)) {
+			$ct->setData($details);
 		} else {
-			$finding->appendTextNode($comment);
+			$comments->appendTextNode($details);
 		}
 	}
 }
